@@ -1,0 +1,33 @@
+[package]
+name = "selfsignedcert-server"
+version = "0.1.0"
+edition = "2024"
+build = "server/build.rs"
+
+[[bin]]
+name = "selfsignedcert-server"
+path = "server/src/main.rs"
+
+[dependencies]
+axum = "0.8"
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.44", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tower-http = { version = "0.6", features = ["trace"] }
+
+[build-dependencies]
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+strip = "symbols"
