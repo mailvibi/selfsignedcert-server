@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -22,6 +23,31 @@ struct Entry {
 
 fn fail(message: impl AsRef<str>) -> ! {
     panic!("asset staging error: {}", message.as_ref())
+}
+
+fn inline_script_hashes(html: &[u8]) -> Vec<String> {
+    let html =
+        std::str::from_utf8(html).unwrap_or_else(|e| fail(format!("index.html is not UTF-8: {e}")));
+    let mut hashes = Vec::new();
+    let mut search_from = 0;
+    while let Some(relative_start) = html[search_from..].find("<script") {
+        let start = search_from + relative_start;
+        let open_end = start
+            + html[start..]
+                .find('>')
+                .unwrap_or_else(|| fail("unterminated script tag"))
+            + 1;
+        let close_start = open_end
+            + html[open_end..]
+                .find("</script>")
+                .unwrap_or_else(|| fail("unterminated script body"));
+        let opening_tag = &html[start..open_end];
+        if !opening_tag.contains("src=") {
+            hashes.push(STANDARD.encode(Sha256::digest(html[open_end..close_start].as_bytes())));
+        }
+        search_from = close_start + "</script>".len();
+    }
+    hashes
 }
 
 fn main() {
@@ -45,6 +71,7 @@ fn main() {
         "pub struct Asset { pub path: &'static str, pub bytes: &'static [u8], pub mime: &'static str, pub sha256: &'static str }\npub static ASSETS: &[Asset] = &[\n",
     );
     let mut listed = Vec::new();
+    let mut script_hashes = Vec::new();
     for entry in &manifest.assets {
         if !entry.url.starts_with('/')
             || entry.url.contains("..")
@@ -61,6 +88,9 @@ fn main() {
             .unwrap_or_else(|e| fail(format!("cannot read {}: {e}", path.display())));
         if bytes.len() != entry.bytes {
             fail(format!("length mismatch for {}", entry.file));
+        }
+        if entry.url == "/index.html" {
+            script_hashes = inline_script_hashes(&bytes);
         }
         let hash = hex::encode(Sha256::digest(&bytes));
         if hash != entry.sha256 {
@@ -89,6 +119,22 @@ fn main() {
         ));
     }
     generated.push_str("];\n");
+    let script_sources = script_hashes
+        .iter()
+        .map(|hash| format!("'sha256-{hash}'"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let script_sources = if script_sources.is_empty() {
+        String::new()
+    } else {
+        format!(" {script_sources}")
+    };
+    let policy = format!(
+        "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'{script_sources}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    );
+    generated.push_str(&format!(
+        "pub const CONTENT_SECURITY_POLICY: &str = {policy:?};\n"
+    ));
     let out = Path::new(&env::var_os("OUT_DIR").unwrap()).join("assets.rs");
     fs::write(out, generated).unwrap();
 }

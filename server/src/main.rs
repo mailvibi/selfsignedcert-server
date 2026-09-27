@@ -136,7 +136,10 @@ fn response(
         "permissions-policy",
         HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
     );
-    headers.insert("content-security-policy", HeaderValue::from_static("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"));
+    headers.insert(
+        "content-security-policy",
+        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+    );
     if no_cache {
         headers.insert(
             header::CACHE_CONTROL,
@@ -198,5 +201,25 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(missing.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn serves_frontend_with_hashed_inline_script_policy() {
+        for path in ["/", "/index.html"] {
+            let response = app()
+                .oneshot(axum::http::Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+            let policy = response
+                .headers()
+                .get("content-security-policy")
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert!(policy.contains("script-src 'self' 'wasm-unsafe-eval' 'sha256-"));
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert!(String::from_utf8_lossy(&body).contains("Self-Signed Certificate Generator"));
+        }
     }
 }
