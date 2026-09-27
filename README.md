@@ -25,6 +25,18 @@ It produces `target/release/selfsignedcert-server`. Python 3 is used only to
 write the deterministic asset manifest. The deployment machine needs only the
 resulting executable.
 
+GitHub Actions builds and tests the Linux x86_64 executable on pushes to `main`,
+pull requests, and manual runs. Each run provides it as an Actions artifact.
+To publish a downloadable GitHub Release asset, push a version tag, for example:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release contains `selfsignedcert-server-linux-x86_64`; it targets Linux
+x86_64 and requires a compatible glibc runtime.
+
 ## Run
 
 ```sh

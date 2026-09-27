@@ -1,0 +1,49 @@
+name: Build server
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install Trunk
+        run: cargo install trunk --locked
+      - name: Build release executable
+        run: ./scripts/release.sh
+      - name: Run tests
+        run: SELF_SIGNED_CERT_ASSETS="$GITHUB_WORKSPACE/target/frontend-assets" cargo test --locked
+      - name: Prepare downloadable artifact
+        run: cp target/release/selfsignedcert-server target/release/selfsignedcert-server-linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selfsignedcert-server-linux-x86_64
+          path: target/release/selfsignedcert-server-linux-x86_64
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: selfsignedcert-server-linux-x86_64
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/selfsignedcert-server-linux-x86_64
